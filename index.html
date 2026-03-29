@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SYSTEM_ACCESS :: FIND_THE_CASH</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #00ff41;
+      --green-dim: #00c832;
+      --green-dark: #003b00;
+      --bg: #000d00;
+      --panel-bg: rgba(0, 10, 0, 0.88);
+      --red: #ff2244;
+      --amber: #ffcc00;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--green);
+      font-family: 'Courier New', Courier, monospace;
+      overflow-x: hidden;
+    }
+
+    /* ── Matrix canvas ── */
+    #matrix-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      opacity: 0.18;
+    }
+
+    /* ── CRT scanlines overlay ── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* ── Page wrapper ── */
+    #page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    /* ── Terminal panel ── */
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--green-dim);
+      box-shadow:
+        0 0 8px var(--green-dim),
+        0 0 30px rgba(0,200,50,0.1),
+        inset 0 0 20px rgba(0,255,65,0.03);
+      border-radius: 4px;
+      width: 100%;
+      max-width: 680px;
+      padding: 2rem 2rem 2.5rem;
+    }
+
+    /* ── Panel top bar ── */
+    .panel-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 1.8rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--green-dark);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .panel-bar-title {
+      margin-left: auto;
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: var(--green-dim);
+      text-transform: uppercase;
+    }
+
+    /* ── Glitch title ── */
+    .glitch-wrap {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .glitch {
+      display: inline-block;
+      font-size: clamp(1.4rem, 5vw, 2.2rem);
+      font-weight: bold;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--green);
+      position: relative;
+      text-shadow: 0 0 8px var(--green);
+    }
+    .glitch::before,
+    .glitch::after {
+      content: attr(data-text);
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+    }
+    .glitch::before {
+      color: #ff0044;
+      animation: glitch-1 2.8s infinite steps(1);
+      clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+    }
+    .glitch::after {
+      color: #00ffff;
+      animation: glitch-2 2.8s infinite steps(1);
+      clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+    }
+    @keyframes glitch-1 {
+      0%,100% { transform: none; opacity: 0; }
+      8%       { transform: translateX(-3px); opacity: 0.75; }
+      10%      { transform: translateX(3px);  opacity: 0.75; }
+      12%      { transform: none; opacity: 0; }
+      60%      { transform: translateX(2px); opacity: 0.6; }
+      62%      { transform: none; opacity: 0; }
+    }
+    @keyframes glitch-2 {
+      0%,100% { transform: none; opacity: 0; }
+      8%       { transform: translateX(3px); opacity: 0.75; }
+      10%      { transform: translateX(-3px); opacity: 0.75; }
+      12%      { transform: none; opacity: 0; }
+      60%      { transform: translateX(-2px); opacity: 0.6; }
+      62%      { transform: none; opacity: 0; }
+    }
+
+    /* ── Prompt prefix ── */
+    .prompt-line {
+      font-size: 0.72rem;
+      color: var(--green-dim);
+      margin-bottom: 1.2rem;
+      letter-spacing: 0.06em;
+    }
+    .prompt-line span { color: var(--green); }
+
+    /* ── Question ── */
+    #question-text {
+      font-size: clamp(0.85rem, 2.5vw, 1.05rem);
+      line-height: 1.7;
+      color: #b8ffb8;
+      margin-bottom: 1.6rem;
+      min-height: 2.5rem;
+    }
+    .cursor-blink {
+      display: inline-block;
+      width: 0.55em; height: 1.1em;
+      background: var(--green);
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+      margin-left: 2px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Input row ── */
+    .input-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid var(--green-dim);
+      border-radius: 2px;
+      overflow: hidden;
+      box-shadow: 0 0 6px rgba(0,255,65,0.2);
+      margin-bottom: 1rem;
+    }
+    .input-prefix {
+      background: var(--green-dark);
+      color: var(--green);
+      padding: 0.6rem 0.7rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      user-select: none;
+    }
+    #answer-input {
+      flex: 1;
+      background: #000e00;
+      color: var(--green);
+      border: none;
+      outline: none;
+      padding: 0.6rem 0.75rem;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1.05rem;
+      letter-spacing: 0.1em;
+      caret-color: var(--green);
+    }
+    #answer-input::placeholder { color: #1a4a1a; }
+    #answer-input:focus { background: #001200; }
+
+    /* ── Submit button ── */
+    #submit-btn {
+      display: block;
+      width: 100%;
+      padding: 0.65rem 1rem;
+      background: transparent;
+      color: var(--green);
+      border: 1px solid var(--green-dim);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    #submit-btn:hover, #submit-btn:focus {
+      background: rgba(0,255,65,0.08);
+      box-shadow: 0 0 12px rgba(0,255,65,0.35);
+      outline: none;
+    }
+    #submit-btn:active { background: rgba(0,255,65,0.15); }
+
+    /* ── Result message ── */
+    #result {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      min-height: 1.4rem;
+      text-align: center;
+    }
+    #result.error  { color: var(--red);   text-shadow: 0 0 6px var(--red); }
+    #result.ok     { color: var(--amber); text-shadow: 0 0 6px var(--amber); }
+
+    /* ── Success screen ── */
+    #success-screen {
+      display: none;
+      text-align: center;
+    }
+    .success-icon {
+      font-size: 2.8rem;
+      margin-bottom: 1rem;
+      animation: pulse-green 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-green {
+      0%,100% { text-shadow: 0 0 6px var(--green); }
+      50%      { text-shadow: 0 0 22px var(--green), 0 0 40px var(--green-dim); }
+    }
+    .success-title {
+      font-size: clamp(1.2rem, 4vw, 1.7rem);
+      color: var(--amber);
+      text-shadow: 0 0 10px var(--amber);
+      letter-spacing: 0.1em;
+      margin-bottom: 1.4rem;
+    }
+    .success-msg {
+      font-size: clamp(0.88rem, 2.5vw, 1rem);
+      color: #c8ffc8;
+      line-height: 1.8;
+      border: 1px dashed var(--green-dark);
+      padding: 1rem 1.2rem;
+      border-radius: 3px;
+      background: rgba(0,255,65,0.03);
+    }
+    .success-msg strong {
+      color: var(--amber);
+      text-shadow: 0 0 5px rgba(255,204,0,0.5);
+    }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 1.5rem;
+      font-size: 0.62rem;
+      color: #1a4a1a;
+      letter-spacing: 0.08em;
+      text-align: center;
+    }
+
+    /* ── Mobile tweaks ── */
+    @media (max-width: 480px) {
+      .panel { padding: 1.4rem 1.2rem 2rem; }
+      #answer-input { font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="matrix-canvas"></canvas>
+
+<div id="page">
+  <div class="panel">
+    <div class="panel-bar">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <div class="panel-bar-title">secure_terminal_v2.1.0</div>
+    </div>
+
+    <!-- ── Hunt screen ── -->
+    <div id="hunt-screen">
+      <div class="glitch-wrap">
+        <div class="glitch" data-text="FIND_THE_CASH">FIND_THE_CASH</div>
+      </div>
+
+      <div class="prompt-line">
+        <span>root@hunt:~$</span> cat clue_01.enc
+      </div>
+
+      <div id="question-text"><span class="cursor-blink"></span></div>
+
+      <div class="input-row">
+        <div class="input-prefix">&gt;_</div>
+        <input
+          id="answer-input"
+          type="text"
+          inputmode="numeric"
+          placeholder="enter access code..."
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          maxlength="20"
+        />
+      </div>
+
+      <button id="submit-btn">[ SUBMIT ]</button>
+      <div id="result" role="alert" aria-live="polite"></div>
+    </div>
+
+    <!-- ── Success screen ── -->
+    <div id="success-screen">
+      <div class="success-icon">&#x2713;</div>
+      <div class="success-title">ACCESS GRANTED</div>
+      <div class="success-msg" id="success-msg"></div>
+    </div>
+
+  </div>
+  <div class="footer">// UNAUTHORIZED ACCESS WILL BE PROSECUTED // SYSTEM MONITORED //</div>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  /* ───────────────────────────────────────────────
+     Matrix rain
+  ─────────────────────────────────────────────── */
+  const canvas = document.getElementById('matrix-canvas');
+  const ctx    = canvas.getContext('2d');
+  const chars  = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF<>{}[]|\\/:;';
+  let cols, drops;
+
+  function resizeMatrix() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    cols  = Math.floor(canvas.width / 16);
+    drops = Array(cols).fill(1);
+  }
+  resizeMatrix();
+  window.addEventListener('resize', resizeMatrix);
+
+  function drawMatrix() {
+    ctx.fillStyle = 'rgba(0,10,0,0.05)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#00ff41';
+    ctx.font = '14px monospace';
+    drops.forEach((y, i) => {
+      const ch = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(ch, i * 16, y * 16);
+      if (y * 16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    });
+  }
+  setInterval(drawMatrix, 40);
+
+  /* ───────────────────────────────────────────────
+     Typewriter for the question
+  ─────────────────────────────────────────────── */
+  const Q = "K\u2019a\u2019ru li ajl tento tinb\u2019oq wi tin\u2019ok sa\u2019 junaq li accidente?";
+  const qEl = document.getElementById('question-text');
+  let qi = 0;
+  function typeQ() {
+    if (qi <= Q.length) {
+      qEl.innerHTML = Q.slice(0, qi) + '<span class="cursor-blink"></span>';
+      qi++;
+      setTimeout(typeQ, qi < Q.length ? 38 : 0);
+    }
+  }
+  setTimeout(typeQ, 600);
+
+  /* ───────────────────────────────────────────────
+     Obfuscated answer verification
+     The correct input is reconstructed at runtime
+     from scattered numeric fragments using a simple
+     XOR transform — do NOT read too much into the
+     variable names; they are intentionally misleading.
+  ─────────────────────────────────────────────── */
+  // Decoy pool — ignore
+  const _decoy1 = [71, 82, 81, 92, 82, 67, 71, 95, 79, 71];
+  const _salt   = 0x2B;   // red-herring key
+
+  // Actual payload: each byte = charCode XOR _xk
+  const _xk  = 0x1F;  // real key, distributed intentionally
+  const _seg = (function() {
+    // 8 6  6  7  3  2  6  4  4  6
+    // → charCodes: 56 54 54 55 51 50 54 52 52 54
+    // → XOR 0x1F:  39 41 41 40 36 45 41 43 43 41
+    return [39, 41, 41, 40, 36, 45, 41, 43, 43, 41];
+  })();
+
+  // Further obscure by splitting reconstruct across two fns
+  function _part1(arr, key) {
+    return arr.slice(0, 5).map(function(b) { return b ^ key; });
+  }
+  function _part2(arr, key) {
+    return arr.slice(5).map(function(b) { return b ^ key; });
+  }
+
+  function _buildTarget() {
+    var codes = _part1(_seg, _xk).concat(_part2(_seg, _xk));
+    return codes.map(function(c) { return String.fromCharCode(c); }).join('');
+  }
+
+  function _checkInput(raw) {
+    // strip whitespace; compare with reconstructed target
+    return raw.replace(/\s/g, '') === _buildTarget();
+  }
+
+  /* ───────────────────────────────────────────────
+     UI logic
+  ─────────────────────────────────────────────── */
+  const input       = document.getElementById('answer-input');
+  const btn         = document.getElementById('submit-btn');
+  const result      = document.getElementById('result');
+  const huntScreen  = document.getElementById('hunt-screen');
+  const successScreen = document.getElementById('success-screen');
+  const successMsg  = document.getElementById('success-msg');
+
+  function shake(el) {
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = 'shake 0.4s ease';
+  }
+
+  const shakeStyle = document.createElement('style');
+  shakeStyle.textContent = `
+    @keyframes shake {
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-6px)}
+      40%{transform:translateX(6px)}
+      60%{transform:translateX(-4px)}
+      80%{transform:translateX(4px)}
+    }`;
+  document.head.appendChild(shakeStyle);
+
+  function revealSuccess() {
+    huntScreen.style.display = 'none';
+    successMsg.innerHTML =
+      'Congrats! You might want to check in on a little post that happened at ' +
+      '<strong>&ldquo;Oakland&rsquo;s Disneyland&rdquo;</strong>.';
+    successScreen.style.display = 'block';
+  }
+
+  function handleSubmit() {
+    const val = input.value;
+    if (!val.trim()) { return; }
+
+    if (_checkInput(val)) {
+      result.textContent = '';
+      revealSuccess();
+    } else {
+      result.className = 'error';
+      result.textContent = '// ACCESS DENIED — incorrect code. try again.';
+      shake(result);
+      input.focus();
+      input.select();
+    }
+  }
+
+  btn.addEventListener('click', handleSubmit);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') handleSubmit();
+  });
+
+})();
+</script>
+</body>
+</html>
